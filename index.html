@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>UBC Posts Search</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500&display=swap');
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #f5f3ee;
+    --surface: #ffffff;
+    --border: #d8d4cc;
+    --text: #1a1a18;
+    --muted: #7a776e;
+    --accent: #1a1a18;
+    --highlight: #f0e84a;
+    --mono: 'IBM Plex Mono', monospace;
+    --sans: 'IBM Plex Sans', sans-serif;
+  }
+
+  body {
+    font-family: var(--sans);
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    padding: 2rem 1rem;
+  }
+
+  .container {
+    max-width: 1000px;
+    margin: 0 auto;
+  }
+
+  header {
+    margin-bottom: 2rem;
+    border-bottom: 1.5px solid var(--text);
+    padding-bottom: 1rem;
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+  }
+
+  h1 {
+    font-family: var(--mono);
+    font-size: 1.1rem;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+  }
+
+  #db-status {
+    font-family: var(--mono);
+    font-size: 0.75rem;
+    color: var(--muted);
+  }
+
+  .search-wrap {
+    position: relative;
+    margin-bottom: 1rem;
+  }
+
+  #search {
+    width: 100%;
+    font-family: var(--mono);
+    font-size: 1rem;
+    padding: 0.75rem 1rem;
+    border: 1.5px solid var(--text);
+    background: var(--surface);
+    color: var(--text);
+    outline: none;
+    transition: border-color 0.15s;
+  }
+
+  #search:disabled {
+    background: var(--bg);
+    border-color: var(--border);
+    color: var(--muted);
+    cursor: not-allowed;
+  }
+
+  #search:focus { border-color: var(--text); }
+
+  #status {
+    font-family: var(--mono);
+    font-size: 0.75rem;
+    color: var(--muted);
+    margin-bottom: 1rem;
+    min-height: 1rem;
+  }
+
+  .table-wrap {
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    background: var(--surface);
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.82rem;
+    table-layout: fixed;
+  }
+
+  colgroup .col-title { width: 28%; }
+  colgroup .col-text  { width: 36%; }
+  colgroup .col-author{ width: 14%; }
+  colgroup .col-id    { width: 10%; }
+  colgroup .col-time  { width: 12%; }
+
+  thead th {
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    padding: 0.6rem 0.75rem;
+    background: var(--bg);
+    border-bottom: 1.5px solid var(--text);
+    text-align: left;
+    white-space: nowrap;
+    color: var(--muted);
+  }
+
+  tbody td {
+    padding: 0.55rem 0.75rem;
+    border-bottom: 1px solid var(--border);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    vertical-align: middle;
+    color: var(--text);
+  }
+
+  tbody tr:last-child td { border-bottom: none; }
+  tbody tr:hover td { background: #f9f7f2; }
+
+  mark {
+    background: var(--highlight);
+    color: var(--text);
+    padding: 0 1px;
+    border-radius: 1px;
+  }
+
+  .empty {
+    font-family: var(--mono);
+    font-size: 0.8rem;
+    color: var(--muted);
+    padding: 2rem 0;
+    text-align: center;
+  }
+
+  a.pill {
+    display: inline-block;
+    font-family: var(--mono);
+    font-size: 0.65rem;
+    padding: 2px 6px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--muted);
+    text-decoration: none;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+  }
+  a.pill:hover { border-color: var(--text); color: var(--text); }
+    display: inline-block;
+    font-family: var(--mono);
+    font-size: 0.65rem;
+    padding: 2px 6px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+  }
+
+  #progress {
+    display: none;
+    font-family: var(--mono);
+    font-size: 0.75rem;
+    color: var(--muted);
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <h1>ubc_posts / search</h1>
+    <span id="db-status">no database loaded</span>
+  </header>
+
+  <div class="search-wrap">
+    <input id="search" type="search" placeholder="search titles and post text…" disabled autocomplete="off" spellcheck="false">
+  </div>
+
+  <div id="status"></div>
+  <div id="results"></div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.2/sql-wasm.min.js"></script>
+<script>
+  let db = null;
+  let timer = null;
+
+  const searchEl  = document.getElementById('search');
+  const statusEl  = document.getElementById('status');
+  const resultsEl = document.getElementById('results');
+  const dbStatus  = document.getElementById('db-status');
+
+  async function loadDb() {
+    dbStatus.textContent = 'loading ubc_posts.db…';
+    statusEl.textContent = 'loading database…';
+    try {
+      const SQL = await initSqlJs({
+        locateFile: f => `https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.2/${f}`
+      });
+
+      const res = await fetch('ubc_posts.db');
+      if (!res.ok) throw new Error(`could not fetch ubc_posts.db (${res.status})`);
+      const buf = await res.arrayBuffer();
+      db = new SQL.Database(new Uint8Array(buf));
+
+      const count = db.exec('SELECT COUNT(*) FROM posts')[0].values[0][0];
+      dbStatus.textContent = `${Number(count).toLocaleString()} posts`;
+      searchEl.disabled = false;
+      searchEl.focus();
+      statusEl.textContent = 'ready — type to search';
+    } catch (err) {
+      dbStatus.textContent = 'error: ' + err.message;
+      statusEl.textContent = '';
+    }
+  }
+
+  loadDb();
+
+  searchEl.addEventListener('input', () => {
+    clearTimeout(timer);
+    timer = setTimeout(doSearch, 200);
+  });
+
+  function esc(s) {
+    return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  function highlight(text, q) {
+    const escaped = esc(text);
+    if (!q) return escaped;
+    const safe = q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return escaped.replace(new RegExp(safe, 'gi'), m => `<mark>${m}</mark>`);
+  }
+
+  function doSearch() {
+    if (!db) return;
+    const q = searchEl.value.trim();
+    if (!q) {
+      statusEl.textContent = 'ready — type to search';
+      resultsEl.innerHTML = '';
+      return;
+    }
+
+    const like = '%' + q + '%';
+    try {
+      const res = db.exec(
+        `SELECT id, title, selftext, author, created_utc
+         FROM posts
+         WHERE title LIKE ? OR selftext LIKE ?
+         LIMIT 200`,
+        [like, like]
+      );
+
+      if (!res.length || !res[0].values.length) {
+        statusEl.textContent = '0 results';
+        resultsEl.innerHTML = '<p class="empty">no matching posts found</p>';
+        return;
+      }
+
+      const rows = res[0].values;
+      const capped = rows.length === 200;
+      statusEl.textContent = `${rows.length}${capped ? '+' : ''} result${rows.length === 1 ? '' : 's'}${capped ? ' (showing first 200)' : ''}`;
+
+      let html = `
+        <div class="table-wrap">
+        <table>
+        <colgroup>
+          <col class="col-id"><col class="col-title"><col class="col-text"><col class="col-author"><col class="col-time">
+        </colgroup>
+        <thead><tr>
+          <th>id</th><th>title</th><th>text</th><th>author</th><th>date</th>
+        </tr></thead>
+        <tbody>`;
+
+      for (const [id, title, selftext, author, created_utc] of rows) {
+        const snippet = (selftext || '').replace(/\s+/g, ' ').trim().slice(0, 140);
+        const date = created_utc ? new Date(created_utc * 1000).toLocaleDateString('en-CA') : '';
+        html += `<tr>
+          <td><a class="pill" href="https://reddit.com/comments/${esc(id)}" target="_blank" rel="noopener">${esc(id)}</a></td>
+          <td title="${esc(title)}">${highlight(title, q)}</td>
+          <td title="${esc(snippet)}">${highlight(snippet, q)}</td>
+          <td><span class="pill">${esc(author)}</span></td>
+          <td style="font-family:var(--mono);font-size:0.75rem;color:var(--muted)">${date}</td>
+        </tr>`;
+      }
+
+      html += '</tbody></table></div>';
+      resultsEl.innerHTML = html;
+
+    } catch (err) {
+      statusEl.textContent = 'query error: ' + err.message;
+    }
+  }
+</script>
+</body>
+</html>
